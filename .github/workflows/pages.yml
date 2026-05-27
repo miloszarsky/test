@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   release:
-    types: [published]
+    types: [published, released, edited]
   workflow_dispatch:
 
 permissions:
@@ -19,49 +19,79 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve latest release tag
-        id: tag
-        run: |
-          tag=$(gh release view --json tagName -q .tagName 2>/dev/null || echo "main")
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Generate index.html
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          REPO: ${{ github.repository }}
         run: |
           mkdir -p _site
-          jsdelivr="https://cdn.jsdelivr.net/gh/${REPO}@${TAG}/sample.json"
-          release="https://github.com/${REPO}/releases/download/${TAG}/sample.json"
-          raw="https://raw.githubusercontent.com/${REPO}/main/sample.json"
-          cat > _site/index.html <<EOF
+          {
+            cat <<'HEAD'
           <!doctype html>
           <html lang="en">
           <head>
             <meta charset="utf-8">
-            <title>sample.json links</title>
+            <title>Release files</title>
             <style>
-              body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; }
-              li { margin: 0.5rem 0; }
+              body { font-family: system-ui, sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; }
+              h2 { margin-top: 2rem; border-top: 1px solid #ddd; padding-top: 1rem; }
+              ul { margin: 0.5rem 0; padding-left: 1.25rem; }
+              li { margin: 0.4rem 0; }
               code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 3px; }
+              .muted { color: #666; font-size: 0.9rem; }
+              .latest { color: #1a7f37; font-weight: 600; }
             </style>
           </head>
           <body>
-            <h1>sample.json</h1>
-            <p>Generated for tag <code>${TAG}</code> by GitHub Actions.</p>
-            <ul>
-              <li><a href="${jsdelivr}">jsDelivr</a> — application/json + CORS</li>
-              <li><a href="${release}">Release asset</a> — application/octet-stream</li>
-              <li><a href="${raw}">raw.githubusercontent.com</a> — text/plain</li>
-            </ul>
-          </body>
-          </html>
-          EOF
+          HEAD
+
+            echo "<h1>Release files for ${REPO}</h1>"
+            echo "<p class='muted'>Generated $(date -u +'%Y-%m-%d %H:%M:%SZ') UTC by GitHub Actions.</p>"
+
+            releases=$(gh release list --json tagName,name,publishedAt,isLatest --limit 100)
+            count=$(echo "$releases" | jq 'length')
+
+            if [ "$count" = "0" ]; then
+              echo "<p class='muted'>No releases yet.</p>"
+            else
+              echo "$releases" | jq -c '.[]' | while read -r release; do
+                tag=$(echo "$release"     | jq -r '.tagName')
+                name=$(echo "$release"    | jq -r '.name // .tagName')
+                pub=$(echo "$release"     | jq -r '.publishedAt')
+                latest=$(echo "$release"  | jq -r '.isLatest')
+
+                badge=""
+                [ "$latest" = "true" ] && badge=" <span class='latest'>latest</span>"
+
+                echo "<h2>${name}${badge}</h2>"
+                echo "<p class='muted'>Tag <code>${tag}</code> · published ${pub}</p>"
+
+                assets=$(gh release view "$tag" --json assets -q '.assets[].name')
+                if [ -z "$assets" ]; then
+                  echo "<p class='muted'>No assets.</p>"
+                  continue
+                fi
+
+                echo "<ul>"
+                while IFS= read -r asset; do
+                  [ -z "$asset" ] && continue
+                  rel="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+                  js="https://cdn.jsdelivr.net/gh/${REPO}@${tag}/${asset}"
+                  raw="https://raw.githubusercontent.com/${REPO}/${tag}/${asset}"
+                  echo "<li><strong>${asset}</strong> &mdash; "
+                  echo "<a href='${rel}'>release</a> · "
+                  echo "<a href='${js}'>jsDelivr</a> · "
+                  echo "<a href='${raw}'>raw</a></li>"
+                done <<< "$assets"
+                echo "</ul>"
+              done
+            fi
+
+            echo "</body></html>"
+          } > _site/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
