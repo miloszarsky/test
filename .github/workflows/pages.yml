@@ -24,6 +24,8 @@ jobs:
       REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Generate index.html
         run: |
@@ -170,6 +172,10 @@ jobs:
                 transition: background 0.15s;
               }
               .chip:hover { background: var(--chip-hover); text-decoration: none; }
+              .chip-primary { background: color-mix(in srgb, var(--link) 12%, var(--chip-bg)); }
+              .chip-primary:hover { background: color-mix(in srgb, var(--link) 20%, var(--chip-bg)); }
+              .chip-primary .chip-label { color: var(--link); }
+              .chip-download .chip-label { opacity: 0.85; }
               .chip-label { font-weight: 600; }
               .chip-mime {
                 color: var(--muted);
@@ -215,13 +221,17 @@ jobs:
                     js_url="https://cdn.jsdelivr.net/gh/${REPO}@${tag}/${asset}"
                     raw_url="https://raw.githubusercontent.com/${REPO}/${tag}/${asset}"
                     js_mime=$(mime_for "$asset")
+                    in_tree=false
+                    git cat-file -e "${tag}:${asset}" 2>/dev/null && in_tree=true
 
                     echo "  <div class='file'>"
                     echo "    <div class='filename'>${asset}</div>"
                     echo "    <div class='links'>"
-                    echo "      <a class='chip' href='${rel_url}'><span class='chip-label'>release</span><span class='chip-mime'>application/octet-stream</span></a>"
-                    echo "      <a class='chip' href='${js_url}'><span class='chip-label'>jsDelivr</span><span class='chip-mime'>${js_mime}</span></a>"
-                    echo "      <a class='chip' href='${raw_url}'><span class='chip-label'>raw</span><span class='chip-mime'>text/plain</span></a>"
+                    if [ "$in_tree" = "true" ]; then
+                      echo "      <a class='chip chip-primary' href='${js_url}' target='_blank' rel='noopener'><span class='chip-label'>jsDelivr</span><span class='chip-mime'>${js_mime}</span></a>"
+                      echo "      <a class='chip' href='${raw_url}' target='_blank' rel='noopener'><span class='chip-label'>raw</span><span class='chip-mime'>text/plain</span></a>"
+                    fi
+                    echo "      <a class='chip chip-download' href='${rel_url}'><span class='chip-label'>release &darr;</span><span class='chip-mime'>application/octet-stream</span></a>"
                     echo "    </div>"
                     echo "  </div>"
                   done <<< "$assets"
