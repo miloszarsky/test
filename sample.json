@@ -1,0 +1,13 @@
+{
+  "name": "sample",
+  "version": "1.0.0",
+  "description": "A sample JSON file for demoing release assets and CDN delivery",
+  "data": {
+    "items": [
+      { "id": 1, "label": "alpha" },
+      { "id": 2, "label": "beta" },
+      { "id": 3, "label": "gamma" }
+    ],
+    "createdAt": "2026-05-27"
+  }
+}
