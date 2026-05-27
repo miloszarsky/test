@@ -245,5 +245,12 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Compute unique build version
+        id: ver
+        run: |
+          unique=$(printf '%s-%s-%s' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | sha1sum | cut -d' ' -f1)
+          echo "sha=$unique" >> "$GITHUB_OUTPUT"
       - id: deployment
         uses: actions/deploy-pages@v5
+        env:
+          GITHUB_SHA: ${{ steps.ver.outputs.sha }}
