@@ -18,17 +18,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Release-triggered runs deploy from the tag ref, which Pages frequently
-  # marks "success" but doesn't actually promote. Redirect to a workflow_dispatch
-  # on main, which deploys reliably.
-  redirect-release:
+  # Pages dedups deployments by commit SHA. Releases on tags don't change main's
+  # SHA, so release-triggered redeploys are silently no-ops. Push an empty
+  # commit so the follow-up push-event run deploys with a genuinely fresh SHA.
+  bump-for-release:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Dispatch deploy from main
-        run: gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ github.token }}
+      - name: Push empty commit on main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Deploy refresh for ${{ github.event.release.tag_name }}"
+          git push origin main
 
   build:
     if: github.event_name != 'release'
@@ -294,19 +302,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # Pages dedups by pages_build_version (commit SHA). Same-SHA redeploys
-      # silently no-op. We can't override GITHUB_SHA via env (runner re-injects),
-      # so we download deploy-pages, patch its bundled source to use a unique
-      # value, and run the patched copy as a local action.
-      - name: Download and patch deploy-pages with unique build version
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.deploy-pages"
-          cd "$GITHUB_WORKSPACE/.deploy-pages"
-          curl -fsSL https://github.com/actions/deploy-pages/archive/refs/tags/v5.0.0.tar.gz \
-            | tar xz --strip-components=1
-          unique=$(printf '%s-%s-%s-%s' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date +%s%N)" | sha1sum | cut -d' ' -f1)
-          sed -i "s|process\.env\.GITHUB_SHA|'${unique}'|g" dist/index.js
-          echo "patched build version: $unique"
-
       - id: deployment
-        uses: ./.deploy-pages
+        uses: actions/deploy-pages@v5
