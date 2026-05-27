@@ -1,0 +1,12 @@
+{
+  "name": "sample2",
+  "version": "2.0.0",
+  "description": "Second sample JSON to test the Pages workflow re-runs on new releases",
+  "data": {
+    "items": [
+      { "id": 10, "label": "delta" },
+      { "id": 20, "label": "epsilon" }
+    ],
+    "createdAt": "2026-05-27"
+  }
+}
