@@ -231,7 +231,7 @@ jobs:
                       echo "      <a class='chip chip-primary' href='${js_url}' target='_blank' rel='noopener'><span class='chip-label'>jsDelivr</span><span class='chip-mime'>${js_mime}</span></a>"
                       echo "      <a class='chip' href='${raw_url}' target='_blank' rel='noopener'><span class='chip-label'>raw</span><span class='chip-mime'>text/plain</span></a>"
                     fi
-                    echo "      <a class='chip chip-download' href='${rel_url}'><span class='chip-label'>release &darr;</span><span class='chip-mime'>application/octet-stream</span></a>"
+                    echo "      <a class='chip chip-download' href='${rel_url}'><span class='chip-label'>release &darr;</span><span class='chip-mime'>${js_mime}</span></a>"
                     echo "    </div>"
                     echo "  </div>"
                   done <<< "$assets"
