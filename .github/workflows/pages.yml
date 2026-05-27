@@ -294,62 +294,19 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Get OIDC token for Pages
-        id: oidc
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const token = await core.getIDToken();
-            core.setSecret(token);
-            core.setOutput('token', token);
+      # Pages dedups by pages_build_version (commit SHA). Same-SHA redeploys
+      # silently no-op. We can't override GITHUB_SHA via env (runner re-injects),
+      # so we download deploy-pages, patch its bundled source to use a unique
+      # value, and run the patched copy as a local action.
+      - name: Download and patch deploy-pages with unique build version
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.deploy-pages"
+          cd "$GITHUB_WORKSPACE/.deploy-pages"
+          curl -fsSL https://github.com/actions/deploy-pages/archive/refs/tags/v5.0.0.tar.gz \
+            | tar xz --strip-components=1
+          unique=$(printf '%s-%s-%s-%s' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date +%s%N)" | sha1sum | cut -d' ' -f1)
+          sed -i "s|process\.env\.GITHUB_SHA|'${unique}'|g" dist/index.js
+          echo "patched build version: $unique"
 
-      - name: Find artifact id for github-pages
-        id: artifact
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: context.runId,
-            });
-            const a = data.artifacts.find(x => x.name === 'github-pages');
-            if (!a) throw new Error('github-pages artifact not found');
-            core.setOutput('id', String(a.id));
-
-      - name: Create Pages deployment with unique build version
-        id: deployment
-        uses: actions/github-script@v7
-        env:
-          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
-          ARTIFACT_ID: ${{ steps.artifact.outputs.id }}
-        with:
-          script: |
-            const crypto = require('crypto');
-            const unique = crypto.createHash('sha1')
-              .update(`${process.env.GITHUB_SHA}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${Date.now()}`)
-              .digest('hex');
-            core.info(`Deploying with pages_build_version=${unique}`);
-            const res = await github.request('POST /repos/{owner}/{repo}/pages/deployments', {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              artifact_id: Number(process.env.ARTIFACT_ID),
-              pages_build_version: unique,
-              oidc_token: process.env.OIDC_TOKEN,
-            });
-            core.info(`Deployment created: id=${res.data.id} status_url=${res.data.status_url}`);
-            core.setOutput('page_url', res.data.page_url || `https://${context.repo.owner}.github.io/${context.repo.repo}/`);
-
-            // Poll until the deployment reports a terminal state
-            const statusUrl = res.data.status_url;
-            const deadline = Date.now() + 5 * 60 * 1000;
-            while (Date.now() < deadline) {
-              await new Promise(r => setTimeout(r, 5000));
-              const s = await github.request(statusUrl);
-              core.info(`status: ${s.data.status}`);
-              if (s.data.status === 'succeed' || s.data.status === 'success') return;
-              if (['failed', 'errored', 'deployment_failed', 'deployment_content_failed', 'deployment_cancelled', 'deployment_lost'].includes(s.data.status)) {
-                throw new Error(`Deployment failed with status: ${s.data.status}`);
-              }
-            }
-            throw new Error('Deployment did not finish within 5 minutes');
+      - id: deployment
+        uses: ./.deploy-pages
