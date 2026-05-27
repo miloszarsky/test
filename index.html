@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>sample.json via jsDelivr</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    pre { background: #f4f4f4; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    .meta { color: #666; font-size: 0.9rem; }
+    code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>sample.json — served via jsDelivr</h1>
+  <p class="meta">
+    Source: <code id="src"></code><br>
+    Status: <span id="status">loading…</span><br>
+    Content-Type: <span id="ctype">—</span>
+  </p>
+  <pre id="out">…</pre>
+
+  <script>
+    const url = "https://cdn.jsdelivr.net/gh/miloszarsky/test@v0.1.0/sample.json";
+    document.getElementById("src").textContent = url;
+
+    fetch(url)
+      .then(async (r) => {
+        document.getElementById("status").textContent = r.status + " " + r.statusText;
+        document.getElementById("ctype").textContent = r.headers.get("content-type") || "(none)";
+        const data = await r.json();
+        document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+      })
+      .catch((e) => {
+        document.getElementById("status").textContent = "error";
+        document.getElementById("out").textContent = String(e);
+      });
+  </script>
+</body>
+</html>
