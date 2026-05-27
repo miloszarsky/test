@@ -11,13 +11,27 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
+  # Release-triggered runs deploy from the tag ref, which Pages frequently
+  # marks "success" but doesn't actually promote. Redirect to a workflow_dispatch
+  # on main, which deploys reliably.
+  redirect-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch deploy from main
+        run: gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -25,17 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download all release assets into _site/<tag>/
+      - name: Generate site (wrappers + index)
         run: |
           mkdir -p _site
-          gh release list --json tagName -q '.[].tagName' --limit 100 | while read -r tag; do
-            [ -z "$tag" ] && continue
-            mkdir -p "_site/${tag}"
-            gh release download "$tag" --dir "_site/${tag}" 2>/dev/null || true
-          done
 
-      - name: Generate index.html
-        run: |
           mime_for() {
             case "$(echo "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
               json)         echo "application/json" ;;
@@ -53,7 +60,18 @@ jobs:
               jpg|jpeg)     echo "image/jpeg" ;;
               gif)          echo "image/gif" ;;
               webp)         echo "image/webp" ;;
+              avif)         echo "image/avif" ;;
               ico)          echo "image/x-icon" ;;
+              bmp)          echo "image/bmp" ;;
+              mp4|m4v)      echo "video/mp4" ;;
+              webm)         echo "video/webm" ;;
+              mov)          echo "video/quicktime" ;;
+              ogv)          echo "video/ogg" ;;
+              mp3)          echo "audio/mpeg" ;;
+              wav)          echo "audio/wav" ;;
+              ogg|opus)     echo "audio/ogg" ;;
+              m4a)          echo "audio/mp4" ;;
+              flac)         echo "audio/flac" ;;
               zip)          echo "application/zip" ;;
               tar)          echo "application/x-tar" ;;
               gz)           echo "application/gzip" ;;
@@ -67,12 +85,53 @@ jobs:
             esac
           }
 
-          bytes_human() {
-            b=$1
-            if   [ "$b" -ge 1073741824 ]; then awk "BEGIN{printf \"%.1f GB\", $b/1073741824}"
-            elif [ "$b" -ge 1048576 ];    then awk "BEGIN{printf \"%.1f MB\", $b/1048576}"
-            elif [ "$b" -ge 1024 ];       then awk "BEGIN{printf \"%.1f KB\", $b/1024}"
-            else echo "${b} B"; fi
+          category_for() {
+            case "$(echo "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
+              jpg|jpeg|png|gif|webp|svg|ico|bmp|avif) echo "image" ;;
+              mp4|webm|mov|ogv|m4v)                   echo "video" ;;
+              mp3|wav|ogg|m4a|flac|opus)              echo "audio" ;;
+              pdf)                                     echo "pdf" ;;
+              *)                                       echo "other" ;;
+            esac
+          }
+
+          write_wrapper() {
+            local tag="$1" asset="$2" url="$3" cat="$4" mime="$5"
+            mkdir -p "_site/${tag}"
+            local embed
+            case "$cat" in
+              image) embed="<img src=\"${url}\" alt=\"${asset}\">" ;;
+              video) embed="<video controls autoplay playsinline src=\"${url}\"></video>" ;;
+              audio) embed="<audio controls autoplay src=\"${url}\"></audio>" ;;
+              pdf)   embed="<iframe src=\"${url}\" title=\"${asset}\"></iframe>" ;;
+            esac
+            cat > "_site/${tag}/${asset}.html" <<HTML
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>${asset}</title>
+            <style>
+              :root { color-scheme: dark light }
+              html, body { margin: 0; padding: 0; background: #0d1117; color: #e6edf3;
+                font-family: system-ui, sans-serif; min-height: 100vh;
+                display: flex; align-items: center; justify-content: center; }
+              img, video, audio { max-width: 100%; max-height: 100vh; display: block; }
+              iframe { width: 100vw; height: 100vh; border: 0; }
+              .hint { position: fixed; top: .6rem; right: .6rem; font-size: .75rem;
+                background: rgba(33,40,48,.85); padding: .35rem .6rem;
+                border-radius: 6px; backdrop-filter: blur(6px); }
+              .hint a { color: #4493f8; text-decoration: none; }
+              .hint a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+          ${embed}
+          <div class="hint"><a href="${url}" download>download &darr;</a></div>
+          </body>
+          </html>
+          HTML
           }
 
           {
@@ -86,29 +145,17 @@ jobs:
             <style>
               :root {
                 color-scheme: light dark;
-                --bg: #ffffff;
-                --fg: #1f2328;
-                --muted: #59636e;
-                --border: #d1d9e0;
-                --card: #f6f8fa;
-                --chip-bg: #eaeef2;
-                --chip-hover: #dde3ea;
-                --link: #0969da;
-                --latest: #1a7f37;
-                --code-bg: #eaeef2;
+                --bg: #ffffff; --fg: #1f2328; --muted: #59636e;
+                --border: #d1d9e0; --card: #f6f8fa;
+                --chip-bg: #eaeef2; --chip-hover: #dde3ea;
+                --link: #0969da; --latest: #1a7f37; --code-bg: #eaeef2;
               }
               @media (prefers-color-scheme: dark) {
                 :root {
-                  --bg: #0d1117;
-                  --fg: #e6edf3;
-                  --muted: #9198a1;
-                  --border: #30363d;
-                  --card: #151b23;
-                  --chip-bg: #212830;
-                  --chip-hover: #2a313c;
-                  --link: #4493f8;
-                  --latest: #3fb950;
-                  --code-bg: #212830;
+                  --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1;
+                  --border: #30363d; --card: #151b23;
+                  --chip-bg: #212830; --chip-hover: #2a313c;
+                  --link: #4493f8; --latest: #3fb950; --code-bg: #212830;
                 }
               }
               * { box-sizing: border-box; }
@@ -154,13 +201,14 @@ jobs:
                 color: var(--muted); font-size: 0.78rem;
                 font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
               }
-              .file a.open {
+              .action {
                 display: inline-flex; align-items: center; gap: 0.4rem;
                 background: var(--chip-bg); color: var(--link);
                 padding: 0.35rem 0.75rem; border-radius: 6px;
                 font-size: 0.825rem; font-weight: 600; white-space: nowrap;
               }
-              .file a.open:hover { background: var(--chip-hover); text-decoration: none; }
+              .action:hover { background: var(--chip-hover); text-decoration: none; }
+              .action.download { color: var(--fg); opacity: 0.85; }
               .empty { color: var(--muted); font-style: italic; }
             </style>
           </head>
@@ -168,7 +216,7 @@ jobs:
           HEAD
 
             echo "<h1>Release files for ${REPO}</h1>"
-            echo "<p class='subtitle'>Generated $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions. Files are served by GitHub Pages with their native MIME types.</p>"
+            echo "<p class='subtitle'>Generated $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions. Renderable files (image/video/audio/pdf) open in the browser via a thin wrapper page; other types download.</p>"
 
             releases=$(gh release list --json tagName,name,publishedAt,isLatest --limit 100)
             count=$(echo "$releases" | jq 'length')
@@ -190,22 +238,39 @@ jobs:
                 echo "  </div>"
                 echo "  <div class='release-meta'>Tag <code>${tag}</code> · ${pub_short}</div>"
 
-                if [ ! -d "_site/${tag}" ] || [ -z "$(ls -A "_site/${tag}" 2>/dev/null)" ]; then
+                assets_json=$(gh release view "$tag" --json assets -q '.assets[] | {name, size}')
+                if [ -z "$assets_json" ]; then
                   echo "  <p class='empty'>No assets.</p>"
                 else
-                  for path in "_site/${tag}"/*; do
-                    [ -f "$path" ] || continue
-                    asset=$(basename "$path")
-                    size=$(stat -c%s "$path")
+                  echo "$assets_json" | jq -c '.' | while read -r a; do
+                    asset=$(echo "$a" | jq -r '.name')
+                    size=$(echo "$a" | jq -r '.size')
                     mime=$(mime_for "$asset")
-                    human=$(bytes_human "$size")
+                    cat=$(category_for "$asset")
+                    rel_url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+
+                    if [ "$size" -ge 1073741824 ]; then human=$(awk "BEGIN{printf \"%.1f GB\", $size/1073741824}")
+                    elif [ "$size" -ge 1048576 ];    then human=$(awk "BEGIN{printf \"%.1f MB\", $size/1048576}")
+                    elif [ "$size" -ge 1024 ];       then human=$(awk "BEGIN{printf \"%.1f KB\", $size/1024}")
+                    else human="${size} B"; fi
+
+                    if [ "$cat" = "other" ]; then
+                      link_url="$rel_url"
+                      action_class="action download"
+                      action_label="download &darr;"
+                    else
+                      write_wrapper "$tag" "$asset" "$rel_url" "$cat" "$mime"
+                      link_url="./${tag}/${asset}.html"
+                      action_class="action"
+                      action_label="open &rarr;"
+                    fi
 
                     echo "  <div class='file'>"
                     echo "    <div class='file-main'>"
                     echo "      <div class='filename'>${asset}</div>"
                     echo "      <div class='file-meta'>${mime} · ${human}</div>"
                     echo "    </div>"
-                    echo "    <a class='open' href='./${tag}/${asset}' target='_blank' rel='noopener'>open &rarr;</a>"
+                    echo "    <a class='${action_class}' href='${link_url}' target='_blank' rel='noopener'>${action_label}</a>"
                     echo "  </div>"
                   done
                 fi
@@ -222,16 +287,12 @@ jobs:
           path: _site
 
   deploy:
+    if: github.event_name != 'release'
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Set unique GITHUB_SHA for deploy
-        run: |
-          unique=$(printf '%s-%s-%s' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" | sha1sum | cut -d' ' -f1)
-          echo "GITHUB_SHA=$unique" >> "$GITHUB_ENV"
-          echo "deploy will use build version: $unique"
       - id: deployment
         uses: actions/deploy-pages@v5
