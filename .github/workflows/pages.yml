@@ -24,13 +24,18 @@ jobs:
       REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+
+      - name: Download all release assets into _site/<tag>/
+        run: |
+          mkdir -p _site
+          gh release list --json tagName -q '.[].tagName' --limit 100 | while read -r tag; do
+            [ -z "$tag" ] && continue
+            mkdir -p "_site/${tag}"
+            gh release download "$tag" --dir "_site/${tag}" 2>/dev/null || true
+          done
 
       - name: Generate index.html
         run: |
-          mkdir -p _site
-
           mime_for() {
             case "$(echo "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
               json)         echo "application/json" ;;
@@ -60,6 +65,14 @@ jobs:
               otf)          echo "font/otf" ;;
               *)            echo "application/octet-stream" ;;
             esac
+          }
+
+          bytes_human() {
+            b=$1
+            if   [ "$b" -ge 1073741824 ]; then awk "BEGIN{printf \"%.1f GB\", $b/1073741824}"
+            elif [ "$b" -ge 1048576 ];    then awk "BEGIN{printf \"%.1f MB\", $b/1048576}"
+            elif [ "$b" -ge 1024 ];       then awk "BEGIN{printf \"%.1f KB\", $b/1024}"
+            else echo "${b} B"; fi
           }
 
           {
@@ -100,88 +113,54 @@ jobs:
               }
               * { box-sizing: border-box; }
               body {
-                background: var(--bg);
-                color: var(--fg);
+                background: var(--bg); color: var(--fg);
                 font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-                max-width: 880px;
-                margin: 0 auto;
-                padding: 2.5rem 1rem 4rem;
+                max-width: 880px; margin: 0 auto; padding: 2.5rem 1rem 4rem;
               }
               h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
               h2 { font-size: 1.05rem; margin: 0; letter-spacing: -0.005em; }
-              p { margin: 0.25rem 0; }
               .subtitle { color: var(--muted); font-size: 0.875rem; margin-bottom: 2rem; }
               code {
-                background: var(--code-bg);
-                padding: 0.1rem 0.4rem;
-                border-radius: 4px;
-                font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-                font-size: 0.875em;
+                background: var(--code-bg); padding: 0.1rem 0.4rem; border-radius: 4px;
+                font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.875em;
               }
               a { color: var(--link); text-decoration: none; }
               a:hover { text-decoration: underline; }
               .release {
-                background: var(--card);
-                border: 1px solid var(--border);
-                border-radius: 10px;
-                padding: 1rem 1.25rem;
-                margin: 1rem 0;
+                background: var(--card); border: 1px solid var(--border);
+                border-radius: 10px; padding: 1rem 1.25rem; margin: 1rem 0;
               }
               .release-head {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 1rem;
-                flex-wrap: wrap;
-                margin-bottom: 0.5rem;
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 1rem; flex-wrap: wrap; margin-bottom: 0.5rem;
               }
               .release-meta { color: var(--muted); font-size: 0.825rem; margin-bottom: 0.75rem; }
               .latest-badge {
-                display: inline-block;
-                color: var(--latest);
-                border: 1px solid currentColor;
-                font-size: 0.7rem;
-                font-weight: 600;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                padding: 0.1rem 0.5rem;
-                border-radius: 999px;
+                display: inline-block; color: var(--latest); border: 1px solid currentColor;
+                font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+                letter-spacing: 0.5px; padding: 0.1rem 0.5rem; border-radius: 999px;
               }
               .file {
-                padding: 0.75rem 0;
-                border-top: 1px solid var(--border);
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 1rem; padding: 0.65rem 0; border-top: 1px solid var(--border);
               }
               .file:first-of-type { border-top: none; padding-top: 0.25rem; }
+              .file-main { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
               .filename {
                 font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-                font-size: 0.925rem;
-                font-weight: 600;
-                margin-bottom: 0.4rem;
-                word-break: break-all;
+                font-size: 0.925rem; font-weight: 600; word-break: break-all;
               }
-              .links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-              .chip {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.45rem;
-                background: var(--chip-bg);
-                padding: 0.3rem 0.65rem;
-                border-radius: 6px;
-                font-size: 0.8rem;
-                color: var(--fg);
-                transition: background 0.15s;
-              }
-              .chip:hover { background: var(--chip-hover); text-decoration: none; }
-              .chip-primary { background: color-mix(in srgb, var(--link) 12%, var(--chip-bg)); }
-              .chip-primary:hover { background: color-mix(in srgb, var(--link) 20%, var(--chip-bg)); }
-              .chip-primary .chip-label { color: var(--link); }
-              .chip-download .chip-label { opacity: 0.85; }
-              .chip-label { font-weight: 600; }
-              .chip-mime {
-                color: var(--muted);
+              .file-meta {
+                color: var(--muted); font-size: 0.78rem;
                 font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-                font-size: 0.75rem;
               }
+              .file a.open {
+                display: inline-flex; align-items: center; gap: 0.4rem;
+                background: var(--chip-bg); color: var(--link);
+                padding: 0.35rem 0.75rem; border-radius: 6px;
+                font-size: 0.825rem; font-weight: 600; white-space: nowrap;
+              }
+              .file a.open:hover { background: var(--chip-hover); text-decoration: none; }
               .empty { color: var(--muted); font-style: italic; }
             </style>
           </head>
@@ -189,7 +168,7 @@ jobs:
           HEAD
 
             echo "<h1>Release files for ${REPO}</h1>"
-            echo "<p class='subtitle'>Generated $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions.</p>"
+            echo "<p class='subtitle'>Generated $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions. Files are served by GitHub Pages with their native MIME types.</p>"
 
             releases=$(gh release list --json tagName,name,publishedAt,isLatest --limit 100)
             count=$(echo "$releases" | jq 'length')
@@ -211,30 +190,24 @@ jobs:
                 echo "  </div>"
                 echo "  <div class='release-meta'>Tag <code>${tag}</code> · ${pub_short}</div>"
 
-                assets=$(gh release view "$tag" --json assets -q '.assets[].name')
-                if [ -z "$assets" ]; then
+                if [ ! -d "_site/${tag}" ] || [ -z "$(ls -A "_site/${tag}" 2>/dev/null)" ]; then
                   echo "  <p class='empty'>No assets.</p>"
                 else
-                  while IFS= read -r asset; do
-                    [ -z "$asset" ] && continue
-                    rel_url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
-                    js_url="https://cdn.jsdelivr.net/gh/${REPO}@${tag}/${asset}"
-                    raw_url="https://raw.githubusercontent.com/${REPO}/${tag}/${asset}"
-                    js_mime=$(mime_for "$asset")
-                    in_tree=false
-                    git cat-file -e "${tag}:${asset}" 2>/dev/null && in_tree=true
+                  for path in "_site/${tag}"/*; do
+                    [ -f "$path" ] || continue
+                    asset=$(basename "$path")
+                    size=$(stat -c%s "$path")
+                    mime=$(mime_for "$asset")
+                    human=$(bytes_human "$size")
 
                     echo "  <div class='file'>"
-                    echo "    <div class='filename'>${asset}</div>"
-                    echo "    <div class='links'>"
-                    if [ "$in_tree" = "true" ]; then
-                      echo "      <a class='chip chip-primary' href='${js_url}' target='_blank' rel='noopener'><span class='chip-label'>jsDelivr</span><span class='chip-mime'>${js_mime}</span></a>"
-                      echo "      <a class='chip' href='${raw_url}' target='_blank' rel='noopener'><span class='chip-label'>raw</span><span class='chip-mime'>text/plain</span></a>"
-                    fi
-                    echo "      <a class='chip chip-download' href='${rel_url}'><span class='chip-label'>release &darr;</span><span class='chip-mime'>${js_mime}</span></a>"
+                    echo "    <div class='file-main'>"
+                    echo "      <div class='filename'>${asset}</div>"
+                    echo "      <div class='file-meta'>${mime} · ${human}</div>"
                     echo "    </div>"
+                    echo "    <a class='open' href='./${tag}/${asset}' target='_blank' rel='noopener'>open &rarr;</a>"
                     echo "  </div>"
-                  done <<< "$assets"
+                  done
                 fi
 
                 echo "</section>"
