@@ -26,17 +26,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v6
         with:
           ref: main
           token: ${{ github.token }}
-      - name: Push empty commit on main
+      - name: Push empty commit and dispatch deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit --allow-empty -m "Deploy refresh for ${{ github.event.release.tag_name }}"
           git push origin main
+          # GITHUB_TOKEN pushes don't trigger workflows, so dispatch explicitly.
+          # The dispatched run on main picks up the freshly pushed HEAD SHA.
+          gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
 
   build:
     if: github.event_name != 'release'
